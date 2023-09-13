@@ -14,6 +14,23 @@ export const getDataWithoutHeadersAndCRC = (data: Buffer): string => {
   return Buffer.from(dataBuffer).toString('ascii');
 }
 
+export const getChipNumberFromDataString = (data: string): string => {
+  const dataStringArray = data.split(';');
+  const chipNumberInverse = dataStringArray[7]; // ex. FB2D770100004000
+  const splitChipNumberToHex = chipNumberInverse.match(/.{1,2}/g); // ex. [FB, 2D, 77, 01, 00, 00, 40, 00]
+  const splitChipNumberToHexReversed = splitChipNumberToHex?.reverse(); // ex. [00, 40, 00, 01, 77, 2D, FB]
+  // revers string order of each hex value
+  const chipNumber = splitChipNumberToHexReversed?.map((hex) => {
+    return hex.match(/.{1,2}/g)?.reverse()?.join('');
+  }).join('');
+
+  console.log("chipNumber: ", chipNumber, 'from: ', chipNumberInverse);
+  if (!chipNumber) {
+    throw new Error('Could not parse chip number from data string');
+  }
+  return chipNumber;
+}
+
 export const getCurrentDateTimeString = (): string => {
   // format: 2015-7-21;9:34:11
   const date = new Date();
@@ -119,7 +136,7 @@ export const prepareResponseBuffer = (data: string): Buffer => {
   console.log("crc32: ", crc32.toString(16));
 
   // write crc as hex to buffer
-  responseBuffer.write(crc32.toString(16).toUpperCase(), i, 8, 'ascii');
+  responseBuffer.write(crc32.toString(16).toUpperCase().padStart(8, '0'), i, 8, 'ascii');
   i += 8;
 
   // write end byte 0x03

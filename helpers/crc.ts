@@ -55,15 +55,13 @@ export const calculateCRC32OnReceivedBtr2Data = (data: Buffer): string => {
   const dataWithCrC = data.slice(startByteIndex, endByteIndex);
   const dataBuffer = Buffer.from(dataWithCrC.slice(0, dataWithCrC.length - 8));
 
-  console.log("data with crc", Buffer.from(dataWithCrC).toString('ascii'));
+  // console.log("data with crc", Buffer.from(dataWithCrC).toString('ascii'));
 
   const crc32 = crc32Calc(dataBuffer);
-  console.log("calculated crc32 int ", crc32);
+  // console.log("calculated crc32 int ", crc32);
 
-  const crc32String = crc32.toString(16).toUpperCase();
-
-  console.log(`Calculated CRC32: 0x${crc32String}`)
-  return crc32String;
+  // console.log(`Calculated CRC32: 0x${crc32String}`)
+  return crc32.toString(16).toUpperCase().padStart(8, '0');
 }
 
 export const parseCRC32FromBtr2Data = (data: string): string => {

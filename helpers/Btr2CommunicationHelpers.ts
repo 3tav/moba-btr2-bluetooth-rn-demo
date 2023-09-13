@@ -65,9 +65,7 @@ export const connectToBtr2Device = async (device: Device, skipBonding?: boolean)
       await establishBtr2Bond(connectedDevice);
       await sleep(8000);
       return await connectToBtr2Device(device, true);
-      // await connectToDevice(connectedDevice, true)
     } else {
-      // setConnectedDevice(connectedDevice);
       console.log(`Connected to ${connectedDevice.name} (${connectedDevice.id})`)
       return Promise.resolve(connectedDevice);
     }
@@ -203,8 +201,10 @@ export const readDataFromBTR2 = async (device?: Device): Promise<string> => {
   // console.log("data hex", data.toString('hex'));
 
   const parsedCRC32 = parseCRC32FromBtr2Data(dataString);
-  console.log("parsedCRC32: ", parsedCRC32);
   const calculatedCRC32 = calculateCRC32OnReceivedBtr2Data(data);
+
+  console.log(`parsedCRC32: *${parsedCRC32}*, calculatedCRC32: *${calculatedCRC32}*`);
+
 
   if (parsedCRC32 !== calculatedCRC32) {
     console.log("CRC32 does not match");

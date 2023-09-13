@@ -6,6 +6,9 @@ import {useEffect, useRef, useState} from "react";
 import useInterval from "../../helpers/useInterval";
 import {enableBluetooth} from "../../helpers/BlePlxHelpers";
 import {connectToBtr2Device, readDataFromBTR2} from "../../helpers/Btr2CommunicationHelpers";
+import {getChipNumberFromDataString} from "../../helpers/Btr2DataHelpers";
+import {READ_WAIT_DELAY} from "../../constants/Btr2Constants";
+import {sleep} from "../../helpers/sleep";
 
 
 export default function TabOneScreen() {
@@ -13,7 +16,9 @@ export default function TabOneScreen() {
   const devices = useRef<Device[]>([]);
   const [connectedDevice, setConnectedDevice] = useState<Device>();
   const [scanningDevices, setScanningDevices] = useState(false);
-  const [scannedBtr2Devices, setScannedBtr2Devices] = useState<Device[]>([]);
+  const [detectedBtr2Devices, setDetectedBtr2Devices] = useState<Device[]>([]);
+
+  const [scannedData, setScannedData] = useState<string[]>([]);
 
   useEffect(() => {
     bleManager.current = new BleManager();
@@ -21,7 +26,7 @@ export default function TabOneScreen() {
 
 
   useInterval(() => {
-    setScannedBtr2Devices(devices.current);
+    setDetectedBtr2Devices(devices.current);
   }, 1000);
 
 
@@ -70,19 +75,68 @@ export default function TabOneScreen() {
     try {
       const btr2ConnectedDevice = await connectToBtr2Device(device);
       setConnectedDevice(btr2ConnectedDevice);
+      await sleep(READ_WAIT_DELAY);
+      continuousReadData(btr2ConnectedDevice).then()
     } catch (e) {
       console.log("error connecting to device", e);
     }
   };
 
+  const disconnectFromDevice = async (device?: Device): Promise<void> => {
+    if (!device) {
+      setConnectedDevice(undefined);
+      return;
+    }
+    try {
+      await device.cancelConnection();
+    } catch (e) {
+      console.log("error disconnecting from device", e);
+    } finally {
+      setConnectedDevice(undefined);
+    }
+  }
+
   const readData = async (device?: Device): Promise<void> => {
     try {
       const dataString = await readDataFromBTR2(device);
+      const chipNumber = getChipNumberFromDataString(dataString);
+      setScannedData((prev) => [...prev, chipNumber]);
       console.log(`Read data from device: ${dataString}`);
-    } catch (e) {
+    } catch (e: any) {
       console.log("error reading data from device", e);
+      console.log("error message", e?.message);
+      throw e;
     }
   }
+
+  const continuousReadData = async (device?: Device): Promise<void> => {
+    let isReading = true; // Use this to determine if you should continue reading
+
+    const recursiveRead = async () => {
+      try {
+        const dataString = await readDataFromBTR2(device);
+        const chipNumber = getChipNumberFromDataString(dataString);
+        setScannedData((prev) => [...prev, chipNumber]);
+        console.log(`Read data from device: ${dataString}`);
+
+
+      } catch (e: any) {
+        console.log("error reading data from device", e);
+        // if e is of type "device disconnected" then stop the interval
+        if (e?.message?.includes("is not connected")) {
+          isReading = false; // Stop further readings
+        }
+      } finally {
+        if (isReading) { // Only reschedule if isReading is still true
+          setTimeout(recursiveRead, READ_WAIT_DELAY);
+        } else {
+          disconnectFromDevice(device).then();
+        }
+      }
+    };
+
+    recursiveRead().then(); // Kickstart the recursive reading
+  };
 
   return (
     <View style={styles.container}>
@@ -111,12 +165,12 @@ export default function TabOneScreen() {
           borderRadius: 20,
           marginVertical: 10,
         }}
-        onPress={() => readData(connectedDevice)}
+        onPress={() => continuousReadData(connectedDevice)}
       >
         <Text>Read data from btr2</Text>
       </TouchableOpacity>
       <ScrollView>
-        {scannedBtr2Devices.map((device) => (
+        {detectedBtr2Devices.map((device) => (
             <TouchableOpacity
               key={device.id}
               style={{
@@ -138,9 +192,16 @@ export default function TabOneScreen() {
           )
         )}
       </ScrollView>
-      {/*<Text style={styles.title}>Tab One</Text>*/}
-      {/*<View style={styles.separator} lightColor="#eee" darkColor="rgba(255,255,255,0.1)"/>*/}
-      {/*<EditScreenInfo path="app/(tabs)/index.tsx"/>*/}
+      <Text
+        style={{
+          marginHorizontal: 10,
+          marginVertical: 20,
+          // color: '#555',
+          fontSize: 30,
+        }}
+      >
+        {scannedData[scannedData.length - 1]}
+      </Text>
     </View>
   );
 }
