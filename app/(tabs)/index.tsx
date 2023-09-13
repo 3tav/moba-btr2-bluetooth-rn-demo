@@ -17,8 +17,7 @@ import * as ExpoDevice from 'expo-device';
 import {Buffer} from "buffer";
 import useInterval from "../../helpers/useInterval";
 import {sleep} from "../../helpers/sleep";
-
-const CRC32 = require('crc-32');
+import {crc32Calc} from "../../helpers/crc";
 
 const DISCOVER_SERVICES_DELAY = 500;
 const READ_WAIT_DELAY = 300;
@@ -27,7 +26,6 @@ const SERVICES = {
   DEVICE_INFO: {
     SERVICE_UUID: "0000180a-0000-1000-8000-00805f9b34fb",
     CHARACTERISTICS: {
-      A: "lalala",
       MANUFACTURER_NAME: "00002a29-0000-1000-8000-00805f9b34fb"
     }
   },
@@ -40,11 +38,11 @@ const SERVICES = {
   MOBA_BTR2: {
     SERVICE_UUID: "00001630-1212-efde-1523-785feabcd123",
     CHARACTERISTICS: {
-      A: "lalala",
       READ_CONTROL_POINT_32: "00001631-1212-efde-1523-785feabcd123",
       READ_OBJECT_34: "00001632-1212-efde-1523-785feabcd123",
       WRITE_CONTROL_POINT_36: "00001633-1212-efde-1523-785feabcd123",
       WRITE_OBJECT_38: "00001634-1212-efde-1523-785feabcd123",
+      BONDING_CHARACTERISTIC: "00001644-1212-efde-1523-785feabcd123",
     }
   }
 }
@@ -124,7 +122,6 @@ export default function TabOneScreen() {
   };
 
   const addDevice = (device: Device) => {
-    // if (device.serviceUUIDs) {
     if (device && device.name?.includes("MOBA")) {
       console.log('Found device: ', device.name, device.serviceUUIDs);
       if (devices.current.find((x) => x.id === device.id)) {
@@ -135,14 +132,6 @@ export default function TabOneScreen() {
       } else {
         devices.current = [...devices.current, device];
       }
-      // if (devices.current.findIndex((x) => x.device.id === device.id) === -1) {
-      //   devices.current = [...devices.current, {device, lastSeen: Date.now()}];
-      // } else {
-      //   devices.current = [...devices.current.map((d) => (d.device.id === device.id ? {
-      //     device,
-      //     lastSeen: Date.now(),
-      //   } : d))];
-      // }
     }
   };
 
@@ -219,16 +208,28 @@ export default function TabOneScreen() {
       .then((d) => d.services()
         .then((services) => {
           services.forEach((service) => {
-            consoleLogBlePlxObject(service, 'service');
+            // consoleLogBlePlxObject(service, 'service');
             console.log('characteristics:');
             service.characteristics().then((characteristics) => {
               characteristics.forEach((characteristic) => {
-                consoleLogBlePlxObject(characteristic);
+                // consoleLogBlePlxObject(characteristic);
               });
             });
           });
         }));
   };
+
+  const establishBond = async (device: Device): Promise<void> => {
+    console.log("establishing pairing...");
+    try {
+      await device.readCharacteristicForService(
+        SERVICES.MOBA_BTR2.SERVICE_UUID,
+        SERVICES.MOBA_BTR2.CHARACTERISTICS.BONDING_CHARACTERISTIC,
+      );
+    } catch (e) {
+      return
+    }
+  }
 
   const connectToDevice = async (device: Device, forceReconnect?: boolean): Promise<Device> => {
     // print device advertisement data
@@ -247,18 +248,22 @@ export default function TabOneScreen() {
       }
     }
     try {
-      // const d = await device.requestConnectionPriority(ConnectionPriority.LowPower);
       const connectedDevice = await device.connect({
           timeout: 5000,
           autoConnect: false,
-          // refreshGatt: "OnConnected",
-          // requestMTU: 23
         }
       );
 
 
       await sleep(DISCOVER_SERVICES_DELAY);
       await discoverServicesAndCharacteristics(connectedDevice);
+      await sleep(3000);
+
+      // TODO find out if device is in pairing mode
+      // if so, establish bond, else skip
+      // if not skipped when not in pairing mode, connection will fail
+
+      // await establishBond(connectedDevice);
       // return await connectedDevice.discoverAllServicesAndCharacteristics();
       setConnectedDevice(connectedDevice);
       return connectedDevice;
@@ -273,19 +278,26 @@ export default function TabOneScreen() {
   const cleanData = (data: string) => {
     return data.replace(/[^a-zA-Z0-9:;\],-]/g, 'X');
   }
-  const calculateCRC32 = (data: string) => {
-    const cleanDataString = cleanData(data);
-    console.log(`calculate CRC32 on data ${cleanDataString} size: ${cleanDataString.length}`);
-    // split data to data and crc (last 8 chars)
-    const dataString = cleanDataString.substring(0, cleanDataString.length - 8);
-    const crcString = cleanDataString.substring(cleanDataString.length - 8, cleanDataString.length);
-    // convert crc to number
-    const crcReceived = parseInt(crcString, 16);
-    console.log('crc received string: ', crcString);
-    console.log("crcReceived: ", crcReceived);
-    // calculate crc32
-    const crc32 = CRC32.buf(Buffer.from(dataString, 'ascii'));
-    console.log("crc32: ", crc32);
+
+  const calculateCRC32 = (data: Buffer): string => {
+    // find index of 0x03
+    const startByteIndex = data.indexOf('\x02') + 1;
+    const endByteIndex = data.indexOf('\x03');
+    // data with crc is between 0x02 and 0x03
+    const dataWithCrC = data.slice(startByteIndex, endByteIndex);
+    const dataBuffer = Buffer.from(dataWithCrC.slice(0, dataWithCrC.length - 8));
+
+    console.log("data with crc", Buffer.from(dataWithCrC).toString('ascii'));
+    console.log("data buffer", Buffer.from(dataBuffer).toString('ascii'));
+
+    // const crc32 = CRC32.buf(dataBuffer) >>> 0;
+    const crc32 = crc32Calc(dataBuffer) >>> 0;
+    console.log("calculated crc32 int ", crc32);
+
+    const crc32String = crc32.toString(16).toUpperCase();
+
+    console.log(`Calculated CRC32: 0x${crc32String}`)
+    return crc32String;
   }
 
   const prepareResponseBuffer = (data: string): Buffer => {
@@ -372,9 +384,10 @@ export default function TabOneScreen() {
     // calculate CRC32
     const crcBegin = 1;
     const crcEnd = i;
-    const length = crcEnd - crcBegin;
-    const crc32 = CRC32.buf(responseBuffer.slice(crcBegin, crcEnd));
+
+    const crc32 = crc32Calc(responseBuffer.slice(crcBegin, crcEnd)) >>> 0;
     console.log("crc32: ", crc32.toString(16));
+
     // write crc as hex to buffer
     responseBuffer.write(crc32.toString(16).toUpperCase(), i, 8, 'ascii');
     i += 8;
@@ -382,7 +395,6 @@ export default function TabOneScreen() {
     // write end byte 0x03
     responseBuffer.writeUInt8(0x03, i);
     i += 1;
-    // i = length + 10; // 1:stx + 8:crc + 1:etx | Probably not needed
 
     // create new buffer with length i and copy data from responseBuffer
     const responseBufferFinal = Buffer.alloc(i);
@@ -398,18 +410,19 @@ export default function TabOneScreen() {
       return;
     }
 
-    const responseBuffer = prepareResponseBuffer(data);
+    let responseBuffer = prepareResponseBuffer(data);
     await sleep(READ_WAIT_DELAY);
 
     // split data to 20 byte chunks
     const chunkSize = 20;
     const dataLength = responseBuffer.length;
 
+    console.log("response data length", dataLength);
+
     for (let i = 0; i < dataLength; i += chunkSize) {  // i is pointer index
       const chunkToSend = responseBuffer.slice(i, Math.min(i + chunkSize, dataLength));
 
       console.log(`sending chunk ${i}/${dataLength}`)
-      await sleep(READ_WAIT_DELAY);
 
       // write to handle 38, length and index
       await device.writeCharacteristicWithResponseForService(
@@ -417,8 +430,6 @@ export default function TabOneScreen() {
         SERVICES.MOBA_BTR2.CHARACTERISTICS.WRITE_CONTROL_POINT_36,
         Buffer.from([dataLength, i]).toString('base64'),
       )
-      await sleep(READ_WAIT_DELAY);
-
 
       // write current chunk to handle 38 (write object)
       await device.writeCharacteristicWithResponseForService(
@@ -429,12 +440,18 @@ export default function TabOneScreen() {
       console.log(`wrote chunk ${i}/${dataLength} to handle 38`)
     }
 
-    await sleep(READ_WAIT_DELAY);
     await device.writeCharacteristicWithResponseForService(
-        SERVICES.MOBA_BTR2.SERVICE_UUID,
-        SERVICES.MOBA_BTR2.CHARACTERISTICS.WRITE_CONTROL_POINT_36,
-        Buffer.from([dataLength, dataLength]).toString('base64'),
-      )
+      SERVICES.MOBA_BTR2.SERVICE_UUID,
+      SERVICES.MOBA_BTR2.CHARACTERISTICS.WRITE_CONTROL_POINT_36,
+      Buffer.from([dataLength, dataLength]).toString('base64'),
+    )
+  }
+
+  const parseCRC32FromData = (data: string): string => {
+    // find index of 0x03
+    const endByteIndex = data.indexOf('\x03');
+    // CRC is last 8 chars
+    return data.substring(endByteIndex - 8, endByteIndex);
   }
 
 
@@ -505,10 +522,19 @@ export default function TabOneScreen() {
     console.log("data: ", data);
     console.log("data hex", data.toString('hex'));
 
-    // acknowledge data read
-    await acknowledgeDataRead(device, dataString);
+    const parsedCRC32 = parseCRC32FromData(dataString);
+    console.log("parsedCRC32: ", parsedCRC32);
+    const calculatedCRC32 = calculateCRC32(data);
 
-    // calculateCRC32(dataString);
+    if (parsedCRC32 !== calculatedCRC32) {
+      console.log("CRC32 does not match");
+      return;
+    } else {
+      // acknowledge data read
+      await acknowledgeDataRead(device, dataString);
+    }
+
+
   }
 
   useInterval(() => {
