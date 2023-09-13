@@ -117,23 +117,26 @@ export const enableBluetooth = async (bleManager?: BleManager) => {
 };
 
 export const discoverServicesAndCharacteristics = async (device: Device): Promise<BleCharacteristic[]> => {
+  console.log("Starting service and characteristic discovery");
   const deviceWithServices = await device.discoverAllServicesAndCharacteristics();
   const services = await deviceWithServices.services();
 
   const discoveredCharacteristics: BleCharacteristic[] = [];
 
-  const discoverCharacteristicsForService = async (service: Service) => {
+  const discoverCharacteristicsForService = async (service: Service): Promise<void> => {
     const characteristics = await service.characteristics();
     characteristics.forEach((characteristic: Characteristic) => {
       discoveredCharacteristics.push({
         serviceUUID: service.uuid,
         characteristicUUID: characteristic.uuid,
       });
-      console.log(`service: ${service.uuid}, characteristic: ${characteristic.uuid}`);
+      // console.log(`service: ${service.uuid}, characteristic: ${characteristic.uuid}`);
     });
   };
 
+
   // Await all the service characteristic discovery operations to complete.
   await Promise.all(services.map(service => discoverCharacteristicsForService(service)));
+  console.log("Discovered all services characteristics");
   return discoveredCharacteristics;
 };
