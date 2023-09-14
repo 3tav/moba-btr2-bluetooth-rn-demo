@@ -29,14 +29,13 @@ export default function TabOneScreen() {
         }}
       >
         <Text>
-          {isBleEnabled ? 'Disable Scan' : 'Enable Scan'}
+          {isBleEnabled ? 'Stop data transmission' : 'Enable data transmission'}
         </Text>
       </TouchableOpacity>
       <Text
         style={{
           marginHorizontal: 10,
           marginVertical: 20,
-          // color: '#555',
           fontSize: 30,
         }}
       >
