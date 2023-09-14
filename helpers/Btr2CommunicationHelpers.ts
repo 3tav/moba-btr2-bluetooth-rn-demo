@@ -39,8 +39,8 @@ export const establishBtr2Bond = async (device: Device): Promise<void> => {
 
 export const connectToBtr2Device = async (device: Device, skipBonding?: boolean): Promise<Device> => {
   // print device advertisement data
-  const advertisementData = Buffer.from(device.manufacturerData || '', 'base64').toString('utf-8');
-  console.log(`xxx${advertisementData}xxx`);
+  // const advertisementData = Buffer.from(device.manufacturerData || '', 'base64').toString('utf-8');
+  // console.log(`xxx${advertisementData}xxx`);
 
   try {
     const connectedDevice = await device.connect({
@@ -55,7 +55,7 @@ export const connectToBtr2Device = async (device: Device, skipBonding?: boolean)
       console.log("Some required characteristics weren't discovered!");
       return Promise.reject(Error('Some required characteristics weren\'t discovered!'));
     }
-    await sleep(3000);
+    // await sleep(500);
 
     // TODO find out if device is in pairing mode
     // if so, establish bond, else skip
@@ -63,7 +63,7 @@ export const connectToBtr2Device = async (device: Device, skipBonding?: boolean)
 
     if (!skipBonding) {
       await establishBtr2Bond(connectedDevice);
-      await sleep(8000);
+      await sleep(500);
       return await connectToBtr2Device(device, true);
     } else {
       console.log(`Connected to ${connectedDevice.name} (${connectedDevice.id})`)
@@ -128,6 +128,7 @@ export const readDataFromBTR2 = async (device?: Device): Promise<string> => {
   if (!device) {
     return Promise.reject(new Error("device not set"));
   }
+  console.log("reading data from BTR2");
   // read from handle 32 (read control point to get length)
   let readLenCharacteristics;
   try {
@@ -138,7 +139,7 @@ export const readDataFromBTR2 = async (device?: Device): Promise<string> => {
   } catch (e) {
     return Promise.reject(e);
   }
-  consoleLogBlePlxObject(readLenCharacteristics, 'read control point');
+  // consoleLogBlePlxObject(readLenCharacteristics, 'read control point');
 
   // get len from base64
   const len = Buffer.from(readLenCharacteristics.value || '', 'base64').readUInt8(0);
